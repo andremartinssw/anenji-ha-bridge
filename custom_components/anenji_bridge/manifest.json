@@ -1,0 +1,11 @@
+{
+  "domain": "anenji_bridge",
+  "name": "Anenji Inverter Bridge",
+  "codeowners": ["@Millerderek"],
+  "config_flow": true,
+  "documentation": "https://github.com/Millerderek/anenji-ha-bridge",
+  "integration_type": "hub",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/Millerderek/anenji-ha-bridge/issues",
+  "version": "1.0.0"
+}

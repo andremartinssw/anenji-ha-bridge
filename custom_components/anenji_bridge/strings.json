@@ -1,0 +1,21 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Anenji Inverter Bridge",
+        "description": "Enter the IP address and port of your Anenji Bridge server.",
+        "data": {
+          "host": "Bridge IP Address",
+          "port": "Bridge Port"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect to the bridge. Check the IP and port.",
+      "invalid_response": "Bridge responded but returned invalid data."
+    },
+    "abort": {
+      "already_configured": "This bridge is already configured."
+    }
+  }
+}

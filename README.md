@@ -2,56 +2,128 @@
 
 **Unchain your inverter from the cloud.**
 
-This project provides a fully local, privacy-focused control system for "Cloud-Only" Hybrid Inverters. These devices are commonly sold under brands like **Anenji**, **Easun**, **MPP Solar**, and others that use the **Desmonitor**, **SmartEss**, or **WatchPower** mobile apps.
+A fully local, privacy-focused control system for "Cloud-Only" Hybrid Inverters sold under brands like **Anenji**, **Easun**, **MPP Solar**, and others that use the **Desmonitor**, **SmartEss**, or **WatchPower** mobile apps.
 
-The current registers are for SRNE based single phased inverters. For Voltronic/Axpert based models, those would likely differ and need adjustment.
+The current registers are mapped for **SRNE-based single-phase inverters**. Voltronic/Axpert-based models use different registers and will need adjustment.
 
-By hijacking the inverter's network traffic and redirecting it to a local Python script, we achieve **1-second real-time updates**, complete offline control, and instant integration with Home Assistant—without voiding the warranty, opening the case, or using RS232 adapters.
+By hijacking the inverter's WiFi dongle traffic and redirecting it to a local Python bridge, you get **1-second real-time updates**, complete offline control, and instant Home Assistant integration — without opening the case, voiding the warranty, or using RS232 adapters.
 
-## 🚀 Features
+## Features
 
-* **⚡ Real-Time 1-Second Updates:** Replaces the slow 5-minute cloud refresh rate with instant high-frequency polling.
-* **🔒 100% Local Control:** Acts as a transparent TCP bridge. No data is sent to external cloud servers; the system works entirely offline.
-* **🎛️ Full Device Management:** Change critical settings instantly from Home Assistant: 
-    * **Output Modes:** Switch between UTI, SOL, SBU, SUB, and SUF.
-    * **Battery Management:** Set AC Charging Amps and specific SOC Thresholds.
-    * **System Controls:** Toggle Buzzer, LCD Backlight, and AC Input Range.
-* **🔋 Smart Calculations:** Auto-calculates Real-time Battery Current, PV Current, and Net Power.
-* **🛠 No Hardware Mods:** Uses the inverter's existing WiFi dongle.
+- **HACS Compatible** — One-click install via the Home Assistant Community Store
+- **Native HA Integration** — Config flow UI, auto-created entities, zero YAML editing required
+- **1-Second Real-Time Updates** — Replaces the slow 5-minute cloud polling with instant high-frequency Modbus reads
+- **100% Local Control** — Transparent TCP bridge. No data leaves your network
+- **Full Device Management from Home Assistant:**
+  - Output Modes: UTI, SOL, SBU, SUB, SUF
+  - Battery Management: AC Charge Amps, SOC Thresholds, Battery Type, Voltage Limits
+  - System Controls: Buzzer, LCD Backlight, AC Input Range
+- **MQTT Publishing** — Optional MQTT output for flexible HA integration (auto-discovery compatible topic structure)
+- **Energy Tracking** — Cumulative kWh counters for PV, Grid, Load, Battery Charge/Discharge (persisted to disk)
+- **Smart Calculations** — Real-time Battery Current, PV Current, Power Factor, all derived from raw registers
+- **Docker Ready** — Single-container deployment with persistent energy data
+- **No Hardware Mods** — Uses the inverter's existing WiFi dongle
+
+## Verified Hardware
+
+| Model | Status |
+|---|---|
+| ANENJI ANJ-6200W-48V | Verified |
+| ANENJI ANJ-12KP-48V | Verified |
+| Other SRNE-based (Easun, MPP Solar) | Should work — registers may vary |
+
+## How It Works
+
+```
+┌──────────────┐     ┌─────────────┐     ┌──────────────────┐
+│  WiFi Dongle │────>│ DNAT/iptables│────>│  Bridge (18899)  │
+│  (Inverter)  │     │  (Router)   │     │  Python + MQTT   │
+└──────────────┘     └─────────────┘     └────────┬─────────┘
+                                                   │
+                                          ┌────────┴─────────┐
+                                          │ Home Assistant    │
+                                          │ (nc → port 9999) │
+                                          │  or MQTT sensors  │
+                                          └──────────────────┘
+```
+
+The inverter's WiFi dongle tries to connect to a cloud server at `8.218.202.213:18899`. A firewall rule (DNAT) redirects that traffic to your local bridge. The bridge emulates the cloud handshake, then polls Modbus registers every second.
+
+## Quick Start (HACS — Recommended)
+
+### Prerequisites
+1. The bridge server must be running (see [Bridge Setup](#quick-start-docker) below)
+2. [HACS](https://hacs.xyz) must be installed in your Home Assistant
+
+### Install via HACS
+
+1. Open HACS in Home Assistant
+2. Click the three dots (top right) → **Custom repositories**
+3. Add `https://github.com/Millerderek/anenji-ha-bridge` as **Integration**
+4. Search for "Anenji" in HACS and click **Install**
+5. Restart Home Assistant
+6. Go to **Settings → Devices & Services → Add Integration → Anenji Inverter Bridge**
+7. Enter your bridge server's IP and port (default: 9999)
+
+That's it. The integration auto-creates:
+- **26 sensors** — Battery, PV, Grid, Load, Temperature, Energy counters, Status
+- **3 switches** — LCD Backlight, Grid Charging, Return to Default Screen
+- **8 number controls** — Charge amps, SOC thresholds, voltage limits
+- **5 select dropdowns** — Output mode, Charger priority, Buzzer, AC range, Battery type
+
+All entities appear under a single "Anenji Inverter" device.
+
+### Manual Install (without HACS)
+
+1. Copy `custom_components/anenji_bridge/` into your HA `config/custom_components/` directory
+2. Restart Home Assistant
+3. Add the integration via **Settings → Devices & Services**
 
 ---
 
-## 📋 Prerequisites
+## Quick Start (Docker)
 
-1. **Compatible Inverter:** Hybrid inverter with WiFi dongle (Anenji, Easun, etc.).
-   * *Verified Hardware:* ANENJI ANJ-6200W-48V
+```bash
+git clone https://github.com/YOUR_USER/anenji-ha-bridge.git
+cd anenji-ha-bridge
+docker compose up -d
+```
 
-2. **Network Control (Choose One):**
-   * **Method A (Router-Based):** OpenWRT / pfSense Router.
-   * **Method B (Bridge-Based):** Linux Server acting as the Inverter's Gateway (Robust, works even if main router dies).
+The bridge starts on port **18899** (inverter) and **9999** (control/query).
 
-3. **Local Server:** A Linux system (Raspberry Pi, Proxmox LXC, Docker) with a **Static IP** (e.g., `192.168.0.105`).
+### Environment Variables
 
----
+| Variable | Default | Description |
+|---|---|---|
+| `MQTT_ENABLED` | `true` | Enable/disable MQTT publishing |
+| `MQTT_HOST` | `127.0.0.1` | MQTT broker address |
+| `MQTT_PORT` | `1883` | MQTT broker port |
+| `MQTT_TOPIC_PREFIX` | `solar/inverter` | MQTT topic prefix |
+| `MQTT_PUBLISH_INTERVAL` | `5.0` | Seconds between MQTT publishes |
+| `POLL_INTERVAL` | `1` | Seconds between Modbus polls |
+| `CONTROL_PORT` | `9999` | TCP port for HA command interface |
+| `ENERGY_FILE` | `/data/inverter_energy.json` | Path for persistent energy counters |
+| `INVERTER_RATED_WATT` | `12000` | Inverter rated wattage (for load % calc) |
 
-## 🛠️ Installation
+## Installation
 
-### Step 0: Choose Your Hijack Method 🚀
+### Step 0: Redirect the Dongle's Traffic
 
-#### Option A: The Router Method (For OpenWRT Users)
-If you have an OpenWRT router, simply try to add this block to `/etc/config/firewall` to redirect the cloud IP (`8.218.202.213`) to your local bridge.
+The WiFi dongle must believe your bridge IS the cloud server. Choose one method:
 
-**Edit:** `/etc/config/firewall`
+#### Option A: Router-Based (OpenWRT / pfSense)
+
+Add to your OpenWRT `/etc/config/firewall`:
 
 ```ini
 config redirect 'inverter_hijack'
     option name 'Inverter Hijack'
     option src 'lan'
     option proto 'tcp'
-    option src_ip '192.168.0.111'     # Your Inverter IP
-    option src_dip '8.218.202.213'    # The common Cloud IP (Verified on Anenji)
-    option src_dport '18899'          # The common Cloud Port
-    option dest_ip '192.168.0.105'    # Your Bridge Server IP
+    option src_ip 'INVERTER_IP'
+    option src_dip '8.218.202.213'
+    option src_dport '18899'
+    option dest_ip 'BRIDGE_IP'
     option dest_port '18899'
     option target 'DNAT'
 
@@ -59,921 +131,216 @@ config nat 'inverter_snat'
     option name 'Inverter Loopback'
     option src 'lan'
     option proto 'tcp'
-    option dest_ip '192.168.0.105'
+    option dest_ip 'BRIDGE_IP'
     option dest_port '18899'
     option target 'MASQUERADE'
 ```
 
-### Option B: Stand-alone / Debian LXC or VM, Raspberry Pi Zero W, etc
+Replace `INVERTER_IP` with your inverter dongle's IP and `BRIDGE_IP` with your bridge server's IP.
 
-Use this if you don't have an Openwrt router. Disable the build in dhcp server, use Dnsmasq instead (careful about remaining locked out).
+#### Option B: Standalone Linux Server (Raspberry Pi, LXC, VM)
 
-1. Install Dependencies (on the Bridge Server):
+Use this if you don't have an OpenWRT router. The bridge server acts as the inverter's gateway.
+
+1. **Install dependencies:**
+   ```bash
+   apt update && apt install dnsmasq iptables-persistent -y
+   ```
+
+2. **Configure DHCP** (`/etc/dnsmasq.conf`):
+   ```ini
+   interface=eth0
+   bind-interfaces
+   port=0
+
+   dhcp-range=192.168.1.100,192.168.1.240,12h
+   dhcp-option=6,8.8.8.8
+   dhcp-option=3,ROUTER_IP
+
+   # Tag the inverter dongle by its MAC address
+   dhcp-host=AA:BB:CC:DD:EE:FF,INVERTER_IP,Solar-Inverter,set:solar_inverter
+   dhcp-option=tag:solar_inverter,3,BRIDGE_IP
+   ```
+
+3. **Configure routing & firewall:**
+   ```bash
+   sysctl -w net.ipv4.ip_forward=1
+   iptables -t nat -A PREROUTING -s INVERTER_IP -p tcp --dport 18899 -j REDIRECT --to-port 18899
+   iptables -t nat -A PREROUTING -s INVERTER_IP -p tcp --dport 38899 -j REDIRECT --to-port 18899
+   iptables -A FORWARD -s INVERTER_IP -j DROP
+   netfilter-persistent save
+   ```
+
+#### Option C: Remote Bridge via GL.iNet Router + Tailscale
+
+See [GL_INET_SETUP.md](GL_INET_SETUP.md) for a guide on redirecting traffic through a travel router to a remote VPS.
+
+### Step 1: Identify Your Cloud Target
+
+Confirm the cloud server IP and port your dongle is connecting to:
 
 ```bash
-apt update && apt install dnsmasq iptables-persistent -y
+apt update && apt install dsniff tcpdump
+# Spoof: tell the inverter YOU are the router
+arpspoof -i eth0 -t INVERTER_IP ROUTER_IP
+# In another terminal, watch the traffic:
+tcpdump -i eth0 host INVERTER_IP and port 18899
 ```
-2. Configure DHCP (/etc/dnsmasq.conf): This forces the Inverter to use the Bridge (192.168.0.105) as its Gateway, while other devices use the normal router (.1).
 
-```ini
-# Core Settings
-interface=eth0
-bind-interfaces
-port=0 # Disables DNS to avoid conflicts
+You should see connections to `8.218.202.213:18899`.
 
-# DHCP Range
-dhcp-range=192.168.0.100,192.168.0.240,12h
+### Step 2: Start the Bridge
 
-# Global Options (Standard Devices -> Main Router)
-dhcp-option=6,8.8.8.8              # DNS
-dhcp-option=3,192.168.0.1          # Standard Gateway
-
-# Inverter Specific (Reservation & Hijack)
-# Replace AA:BB:CC... with your Inverter Dongle MAC
-dhcp-host=AA:BB:CC:DD:EE:FF,192.168.0.111,Solar-Inverter,set:solar_inverter
-
-# Send the Bridge IP (.105) as Gateway ONLY to the tagged inverter
-dhcp-option=tag:solar_inverter,3,192.168.0.105
-````
-3. Configure Routing & Firewall: Run these commands to enable traffic forwarding and hijack the solar port locally.
-
+**Docker (recommended):**
 ```bash
-# 1. Enable IP Forwarding (Required for the LXC to act as a Gateway)
-sysctl -w net.ipv4.ip_forward=1
-
-# 2. Redirect "Control" Traffic to Local Script
-# Any TCP packet from the Dongle (192.168.0.111) destined for Port 18899 
-# is grabbed and sent to the LXC's local port 18899.
-iptables -t nat -A PREROUTING -s 192.168.0.111 -p tcp --dport 18899 -j REDIRECT --to-port 18899
-
-# 3. Redirect "Data Logging" Traffic to Local Script
-# We send Port 38899 to 18899 as well, because your script's new "AT+DTUPN?" 
-# logic is universal enough to handle the initial handshake for both.
-iptables -t nat -A PREROUTING -s 192.168.0.111 -p tcp --dport 38899 -j REDIRECT --to-port 18899
-
-# 4. BLOCK any other Internet Access (The "Kill Switch")
-# trying to pass through the LXC to the WAN. 
-iptables -A FORWARD -s 192.168.0.111 -j DROP
-
-# 5. Save the Rules
-# Ensures these persist after a reboot.
-netfilter-persistent save
+docker compose up -d
+docker logs -f anenji-bridge
 ```
 
+**Systemd (bare metal):**
+```bash
+cp inverter_bridge.py /opt/anenji-bridge/
+pip install paho-mqtt
 
-### Step 1: Identify Your Cloud Target 🕵️
-
-Even if using the "Catch-All" method, it is good to confirm the port.
-Since you have a Linux server on the same network, use it to sniff the traffic.
-
-1.  **Install tools:** `apt update && apt install dsniff tcpdump`
-2.  **Spoof the traffic:** Tell the inverter (`192.168.0.111`) that YOU are the router (`192.168.0.1`).
-    ```bash
-    # Replace IPs with: [Inverter IP] [Router IP]
-    arpspoof -i eth0 -t 192.168.0.111 192.168.0.1
-    ```
-    
-    *(Leave running in Terminal 1)*
-2.  **Watch DNS queries:** In Terminal 2: `tcpdump -i eth0`
-    * **You should see this:**
-    
-    ```terminal
-    14:26:59.963092 IP 192.168.0.111.51118 > 8.218.202.213.18899: Flags [S], seq 4912356, win 4380, options [mss 1460], length 0
-    ```
-
-
-### Step 3: Install the Bridge Service
-
-1. Upload `inverter_service.py` to `/root/inverter_service.py`.
-
-2. Create the systemd service: `/etc/systemd/system/inverter-bridge.service`
-
-```ini
+cat > /etc/systemd/system/anenji-bridge.service << 'EOF'
 [Unit]
-Description=Inverter Modbus TCP Bridge
+Description=Anenji Inverter Local Cloud Bridge
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/python3 -u /root/inverter_service.py
-WorkingDirectory=/root
-StandardOutput=inherit
-StandardError=inherit
+ExecStart=/usr/bin/python3 -u /opt/anenji-bridge/inverter_bridge.py
+WorkingDirectory=/opt/anenji-bridge
 Restart=always
 RestartSec=5
-User=root
 
 [Install]
 WantedBy=multi-user.target
-```
+EOF
 
-
-Enable it:
-```bash
 systemctl daemon-reload
-systemctl enable --now inverter-bridge
+systemctl enable --now anenji-bridge
 ```
 
-### Step 4: Home Assistant Configuration
+### Step 3: Verify the Connection
 
-Add this to your `configuration.yaml`. We use `nc` (Netcat) instead of Python for the command line to ensure sub-1-second performance.
-
-
-```yaml
-input_select:
-  inverter_battery_type:
-    name: "Inverter Battery Type"
-    options:
-      - "AGN"
-      - "FLD"
-      - "USR"
-      - "LI2"
-      - "LI4"
-      - "LIb"
-    icon: mdi:battery-sync
-
-
-  inverter_buzzer_mode:
-    name: "Inverter Buzzer Mode"
-    options:
-      - "Mute (nd1)"
-      - "Source/Warn/Fault (nd2)"
-      - "Warn/Fault (nd3)"
-      - "Fault Only (nd4)"
-    icon: mdi:volume-high
-
-  inverter_ac_range:
-    name: "AC Input Range"
-    options:
-      - "Appliances (APL)"
-      - "UPS (UPS)"
-      - "Generator (GEN)"
-    icon: mdi:sine-wave
-
-  inverter_mode:
-    name: Inverter Output Source Priority
-    options:
-      - "Utility First (UTI)"
-      - "Solar First (SOL)"
-      - "SBU (Solar-Batt-Util)"
-      - "SUB (Solar-Util-Batt)"
-      - "SUF (GRID Feedback)"
-    icon: mdi:source-branch
-    
-  inverter_charger_priority:
-    name: Charger Source Priority
-    options:
-      - "Solar First (CSO)"
-      - "Solar + Utility (SNU)"
-      - "Solar Only (OSO)"
-    icon: mdi:battery-charging
-
-#--- CONTROL LOGIC ---
-shell_command:
-  set_inverter_uti: '/bin/sh -c "echo MODE_0 | nc -w 5 192.168.0.105 9999"'
-  set_inverter_sol: '/bin/sh -c "echo MODE_1 | nc -w 5 192.168.0.105 9999"'
-  set_inverter_sbu: '/bin/sh -c "echo MODE_2 | nc -w 5 192.168.0.105 9999"'
-  set_inverter_sub: '/bin/sh -c "echo MODE_3 | nc -w 5 192.168.0.105 9999"'
-  set_inverter_suf: '/bin/sh -c "echo MODE_4 | nc -w 5 192.168.0.105 9999"'
-  set_charger_cso: '/bin/sh -c "echo CSO_SET | nc -w 5 192.168.0.105 9999"'
-  set_charger_snu: '/bin/sh -c "echo SNU_SET | nc -w 5 192.168.0.105 9999"'
-  set_charger_oso: '/bin/sh -c "echo OSO_SET | nc -w 5 192.168.0.105 9999"'
-  set_soc_grid_direct: '/bin/sh -c "echo SET_SOC_GRID_{{ val }} | nc -w 5 192.168.0.105 9999"'
-  set_soc_batt_direct: '/bin/sh -c "echo SET_SOC_BATT_{{ val }} | nc -w 5 192.168.0.105 9999"'
-  set_soc_cutoff_direct: '/bin/sh -c "echo SET_SOC_CUTOFF_{{ val }} | nc -w 5 192.168.0.105 9999"'
-  set_ac_range: >
-    /bin/sh -c "echo SET_AC_RANGE_{% if is_state('input_select.inverter_ac_range', 'Appliances (APL)') %}0{% elif is_state('input_select.inverter_ac_range', 'UPS (UPS)') %}1{% else %}2{% endif %} | nc -w 5 192.168.0.105 9999"
-  set_buzzer_mute: '/bin/sh -c "echo SET_BUZZER_0 | nc -w 5 192.168.0.105 9999"'
-  set_buzzer_nd2: '/bin/sh -c "echo SET_BUZZER_1 | nc -w 5 192.168.0.105 9999"'
-  set_buzzer_nd3: '/bin/sh -c "echo SET_BUZZER_2 | nc -w 5 192.168.0.105 9999"'
-  set_buzzer_fault: '/bin/sh -c "echo SET_BUZZER_3 | nc -w 5 192.168.0.105 9999"'
-  set_backlight_on: '/bin/sh -c "echo SET_BACKLIGHT_1 | nc -w 5 192.168.0.105 9999"'
-  set_backlight_off: '/bin/sh -c "echo SET_BACKLIGHT_0 | nc -w 5 192.168.0.105 9999"'
-  grid_charge_on: '/bin/sh -c "echo CHARGE_ON | nc -w 5 192.168.0.105 9999"'
-  grid_charge_off: '/bin/sh -c "echo CHARGE_OFF | nc -w 5 192.168.0.105 9999"'
-  set_return_default_on: '/bin/sh -c "echo SET_RETURN_DEFAULT_1 | nc -w 5 192.168.0.105 9999"'
-  set_return_default_off: '/bin/sh -c "echo SET_RETURN_DEFAULT_0 | nc -w 5 192.168.0.105 9999"'
-  set_charge_amps_direct: '/bin/sh -c "echo SET_AMPS_{{ val }} | nc -w 5 192.168.0.105 9999"'
-  set_total_amps_direct: '/bin/sh -c "echo SET_TOTAL_AMPS_{{ val }} | nc -w 5 192.168.0.105 9999"'
-  set_battery_agn: '/bin/sh -c "echo SET_BATTERY_TYPE_0 | nc -w 5 192.168.0.105 9999"'
-  set_battery_fld: '/bin/sh -c "echo SET_BATTERY_TYPE_1 | nc -w 5 192.168.0.105 9999"'
-  set_battery_usr: '/bin/sh -c "echo SET_BATTERY_TYPE_2 | nc -w 5 192.168.0.105 9999"'
-  set_battery_li2: '/bin/sh -c "echo SET_BATTERY_TYPE_4 | nc -w 5 192.168.0.105 9999"'
-  set_battery_li4: '/bin/sh -c "echo SET_BATTERY_TYPE_6 | nc -w 5 192.168.0.105 9999"'
-  set_battery_lib: '/bin/sh -c "echo SET_BATTERY_TYPE_8 | nc -w 5 192.168.0.105 9999"'
-  set_bulk_volt_direct: '/bin/sh -c "echo SET_BULK_VOLT_{{ val }} | nc -w 5 192.168.0.105 9999"'
-  set_float_volt_direct: '/bin/sh -c "echo SET_FLOAT_VOLT_{{ val }} | nc -w 5 192.168.0.105 9999"'
-  set_low_dc_cutoff_direct: '/bin/sh -c "echo SET_LOW_DC_CUTOFF_{{ val }} | nc -w 5 192.168.0.105 9999"'
-  
-# --- SENSOR CONFIGURATION ---
-command_line:
-  - sensor:
-      name: "Inverter Bridge Data"
-      # Using -w 3 ensures it fails/timeouts if bridge is down
-      command: 'echo "JSON" | nc -w 3 192.168.0.105 9999' 
-      scan_interval: 1
-      # Only mark as "Online" if we actually got valid JSON data
-      value_template: >
-        {% if value_json is defined %}
-          Online
-        {% else %}
-          Offline
-        {% endif %}
-      # If the command fails (exit code 1), the sensor becomes Unavailable automatically.
-      json_attributes:
-        - fault_msg
-        - warning_code
-        - warning_msg
-        - device_status_msg
-        - device_status_code
-        - fault_code
-        - fault_bitmask
-        - warning_bitmask
-        - return_to_default
-        - ac_output_amp
-        - ac_load_real_watt
-        - ac_load_va
-        - grid_current
-        - buzzer_mode
-        - backlight_status
-        - ac_input_range
-        - max_total_amps
-        - max_ac_amps
-        - temp_dc
-        - temp_inv
-        - ac_load_pct
-        - charger_priority
-        - output_mode
-        - grid_charge_setting
-        - grid_volt 
-        - batt_volt
-        - ac_load_watt
-        - ac_out_volt
-        - ac_out_amp
-        - pv_input_volt
-        - pv_input_watt
-        - pv_charging_watt
-        - inverter_temp
-        - batt_power_watt
-        - batt_soc
-        - batt_current
-        - pv_current
-        - grid_power_watt
-        - soc_back_to_grid 
-        - soc_back_to_batt 
-        - soc_cutoff
-        - grid_freq
-        - total_pv_energy_kwh
-        - total_grid_input_kwh
-        - total_load_kwh
-        - total_battery_charge_kwh
-        - total_battery_discharge_kwh
-        - battery_type_code
-        - battery_type_msg
-        - bulk_charge_volt
-        - float_charge_volt
-        - low_dc_cutoff_volt
-        
-template:
-  - number:
-      - name: "Bulk Charging Voltage"
-        unique_id: bulk_charging_voltage
-        icon: mdi:battery-arrow-up
-        state: "{{ state_attr('sensor.inverter_bridge_data', 'bulk_charge_volt') | float(0) }}"
-        availability: "{{ states('sensor.inverter_bridge_data') == 'Online' }}"
-        set_value:
-          service: shell_command.set_bulk_volt_direct
-          data:
-            val: "{{ value | float }}"
-        min: 48.0
-        max: 58.4
-        step: 0.1
-    
-      - name: "Float Charging Voltage"
-        unique_id: float_charging_voltage
-        icon: mdi:battery-check
-        state: "{{ state_attr('sensor.inverter_bridge_data', 'float_charge_volt') | float(0) }}"
-        availability: "{{ states('sensor.inverter_bridge_data') == 'Online' }}"
-        set_value:
-          service: shell_command.set_float_volt_direct
-          data:
-            val: "{{ value | float }}"
-        min: 48.0
-        max: 58.4
-        step: 0.1
-     
-      - name: "Low DC Cut-off Voltage"
-        unique_id: low_dc_cutoff_voltage
-        icon: mdi:battery-alert
-        state: "{{ state_attr('sensor.inverter_bridge_data', 'low_dc_cutoff_volt') | float(0) }}"
-        availability: "{{ states('sensor.inverter_bridge_data') == 'Online' }}"
-        set_value:
-          service: shell_command.set_low_dc_cutoff_direct
-          data:
-            val: "{{ value | float }}"
-        min: 40.0
-        max: 51.9
-        step: 0.1
-        
-      - name: "Max Charging Current (Total)"
-        unique_id: max_charging_current_total
-        icon: mdi:battery-charging-high
-        state: "{{ state_attr('sensor.inverter_bridge_data', 'max_total_amps') | float(0) }}"
-        availability: "{{ states('sensor.inverter_bridge_data') == 'Online' }}"
-        set_value:
-          service: shell_command.set_total_amps_direct
-          data:
-            val: "{{ value | int }}"
-        min: 10
-        max: 120
-        step: 1
-
-      - name: "Max AC Charge Amps"
-        unique_id: num_max_ac_amps
-        min: 5
-        max: 80
-        step: 1
-        unit_of_measurement: "A"
-        icon: mdi:current-ac
-        state: "{{ state_attr('sensor.inverter_bridge_data', 'max_ac_amps') | int(0) }}"
-        availability: "{{ states('sensor.inverter_bridge_data') == 'Online' }}"
-        set_value:
-          service: shell_command.set_charge_amps_direct
-          data:
-            val: "{{ value | int }}"
-
-      - name: "Back to Grid SOC (Prg 43)"
-        unique_id: num_soc_grid
-        min: 4
-        max: 50
-        step: 1
-        unit_of_measurement: "%"
-        icon: mdi:battery-arrow-down
-        state: "{{ state_attr('sensor.inverter_bridge_data', 'soc_back_to_grid') | int(0) }}"
-        availability: "{{ states('sensor.inverter_bridge_data') == 'Online' }}"
-        set_value:
-          service: shell_command.set_soc_grid_direct
-          data:
-            val: "{{ value | int }}"
-
-      - name: "Back to Battery SOC (Prg 44)"
-        unique_id: num_soc_batt
-        min: 60
-        max: 100
-        step: 1
-        unit_of_measurement: "%"
-        icon: mdi:battery-arrow-up
-        state: "{{ state_attr('sensor.inverter_bridge_data', 'soc_back_to_batt') | int(0) }}"
-        availability: "{{ states('sensor.inverter_bridge_data') == 'Online' }}"
-        set_value:
-          service: shell_command.set_soc_batt_direct
-          data:
-            val: "{{ value | int }}"
-
-      - name: "Cut-off SOC (Prg 45)"
-        unique_id: num_soc_cutoff
-        min: 3
-        max: 30
-        step: 1
-        unit_of_measurement: "%"
-        icon: mdi:battery-alert
-        state: "{{ state_attr('sensor.inverter_bridge_data', 'soc_cutoff') | int(0) }}"
-        availability: "{{ states('sensor.inverter_bridge_data') == 'Online' }}"
-        set_value:
-          service: shell_command.set_soc_cutoff_direct
-          data:
-            val: "{{ value | int }}"
-            
-  - switch:
-      - name: "Inverter LCD Backlight"
-        unique_id: inverter_backlight_switch
-        state: "{{ state_attr('sensor.inverter_bridge_data', 'backlight_status') == 1 }}"
-        # This switch becomes Unavailable if the bridge is down
-        availability: "{{ states('sensor.inverter_bridge_data') == 'Online' }}"
-        turn_on:
-          service: shell_command.set_backlight_on
-        turn_off:
-          service: shell_command.set_backlight_off
-        icon: mdi:monitor-shimmer
-
-      - name: "Grid Charging"
-        unique_id: grid_chargingz_template
-        state: "{{ state_attr('sensor.inverter_bridge_data', 'charger_priority') | int(default=3) == 2 }}"
-        # This switch becomes Unavailable if the bridge is down
-        availability: "{{ states('sensor.inverter_bridge_data') == 'Online' }}"
-        turn_on:
-          service: shell_command.grid_charge_on
-        turn_off:
-          service: shell_command.grid_charge_off
-        icon: mdi:flash
-      
-      - name: "Inverter Return to Default Screen"
-        unique_id: inverter_return_default_switch
-        state: "{{ state_attr('sensor.inverter_bridge_data', 'return_to_default') == 1 }}"
-        availability: "{{ states('sensor.inverter_bridge_data') == 'Online' }}"
-        turn_on:
-          service: shell_command.set_return_default_on
-        turn_off:
-          service: shell_command.set_return_default_off
-        icon: mdi:arrow-u-left-top
-
-  - sensor:
-      - name: "Solar Energy"
-        unique_id: solar_energy
-        unit_of_measurement: "kWh"
-        device_class: energy
-        state_class: total_increasing
-        icon: mdi:solar-power
-        availability: "{{ states('sensor.inverter_bridge_data') == 'Online' }}"
-        state: "{{ state_attr('sensor.inverter_bridge_data', 'total_pv_energy_kwh') |float - 6392 }}"
-
-      - name: "Grid Import Energy"
-        unique_id: grid_import_energy
-        unit_of_measurement: "kWh"
-        device_class: energy
-        state_class: total_increasing
-        icon: mdi:transmission-tower
-        state: "{{ state_attr('sensor.inverter_bridge_data', 'total_grid_input_kwh') }}"
-
-      - name: "House Load Energy"
-        unique_id: house_load_energy
-        unit_of_measurement: "kWh"
-        device_class: energy
-        state_class: total_increasing
-        icon: mdi:home-lightning-bolt
-        state: "{{ state_attr('sensor.inverter_bridge_data', 'total_load_kwh') }}"
-
-      - name: "Battery Charge Energy"
-        unique_id: battery_charge_energy
-        unit_of_measurement: "kWh"
-        device_class: energy
-        state_class: total_increasing
-        icon: mdi:battery-charging
-        state: "{{ state_attr('sensor.inverter_bridge_data', 'total_battery_charge_kwh') }}"
-
-      - name: "Battery Discharge Energy"
-        unique_id: battery_discharge_energy
-        unit_of_measurement: "kWh"
-        device_class: energy
-        state_class: total_increasing
-        icon: mdi:battery-minus
-        state: "{{ state_attr('sensor.inverter_bridge_data', 'total_battery_discharge_kwh') }}"
-
-      # 1. Device Status (e.g., "Line Mode", "Battery Mode", "Warning Mode")
-      - name: "Inverter Status"
-        unique_id: inv_device_status
-        icon: mdi:information-outline
-        state: "{{ state_attr('sensor.inverter_bridge_data', 'device_status_msg') }}"
-        availability: "{{ states('sensor.inverter_bridge_data') == 'Online' }}"
-
-      # 2. Fault/Error Message (e.g., "No Fault", "Inverter current offset is too high")
-      # This is for CRITICAL errors that stop the machine.
-      - name: "Inverter Fault Message"
-        unique_id: inv_fault_msg
-        icon: mdi:alert-circle
-        state: "{{ state_attr('sensor.inverter_bridge_data', 'fault_msg') }}"
-        availability: "{{ states('sensor.inverter_bridge_data') == 'Online' }}"
-
-      # 3. Warning Message (e.g., "No Warning", "BMS Communication Fail")
-      # This is for ALERTS where the machine keeps running (Status 4).
-      - name: "Inverter Warning Message"
-        unique_id: inv_warning_msg
-        icon: mdi:alert
-        state: "{{ state_attr('sensor.inverter_bridge_data', 'warning_msg') }}"
-        availability: "{{ states('sensor.inverter_bridge_data') == 'Online' }}"
-
-      - name: "House Load Apparent Power"
-        unique_id: inv_load_apparent_power
-        unit_of_measurement: "VA"
-        device_class: apparent_power
-        state: "{{ state_attr('sensor.inverter_bridge_data', 'ac_load_va')}}"
-        availability: "{{ states('sensor.inverter_bridge_data') == 'Online' }}"
-        icon: mdi:flash-outline  
-
-      - name: "House Load Power"
-        unique_id: inv_house_load_watts
-        unit_of_measurement: "W"
-        device_class: power
-        state: "{{ state_attr('sensor.inverter_bridge_data', 'ac_load_real_watt')}}"
-        availability: "{{ states('sensor.inverter_bridge_data') == 'Online' }}"
-
-      - name: "Output Power Factor"
-        unique_id: inv_output_pf
-        unit_of_measurement: "PF"    
-        state_class: measurement
-        availability: "{{ states('sensor.inverter_bridge_data') == 'Online' }}"
-        state: >
-          {% set real = state_attr('sensor.inverter_bridge_data', 'ac_load_real_watt') %}
-          {% set va = state_attr('sensor.inverter_bridge_data', 'ac_load_va') %}
-          {% if is_number(real) and is_number(va) %}
-            {% if va | float > 0 %}
-              {{ (real | float / va | float) | round(2) }}
-            {% else %}
-              1.0
-            {% endif %}
-          {% else %}
-            None
-          {% endif %}
-          
-      - name: "Inverter Temp (DC)"
-        state: "{{ state_attr('sensor.inverter_bridge_data', 'temp_dc') }}"
-        unit_of_measurement: "°C"
-        unique_id: inv_dc_temp
-        device_class: temperature
-        availability: "{{ states('sensor.inverter_bridge_data') == 'Online' }}"
-
-      - name: "Inverter Temp (AC)"
-        state: "{{ state_attr('sensor.inverter_bridge_data', 'temp_inv') }}"
-        unit_of_measurement: "°C"
-        unique_id: inv_ac_temp
-        device_class: temperature
-        availability: "{{ states('sensor.inverter_bridge_data') == 'Online' }}"
-
-      - name: "Inverter Load Percentage"
-        state: "{{ state_attr('sensor.inverter_bridge_data', 'ac_load_pct') }}"
-        unit_of_measurement: "%"
-        unique_id: 840ce89d-721b-47d0-a5c1-1a233fe9c22
-        icon: mdi:percent
-        availability: "{{ states('sensor.inverter_bridge_data') == 'Online' }}"
-        
-      - name: "Grid Input Power"
-        unique_id: inv_grid_power
-        unit_of_measurement: "W"
-        device_class: power
-        state: "{{ state_attr('sensor.inverter_bridge_data', 'grid_power_watt') }}"
-        availability: "{{ states('sensor.inverter_bridge_data') == 'Online' }}"
-
-      - name: "PV Current"
-        unique_id: inv_pv_current
-        unit_of_measurement: "A"
-        state: "{{ state_attr('sensor.inverter_bridge_data', 'pv_current') }}"
-        availability: "{{ states('sensor.inverter_bridge_data') == 'Online' }}"
-
-      - name: "PV Charging Power"
-        unique_id: inv_pv_charging_watt
-        unit_of_measurement: "W"
-        state: "{{ state_attr('sensor.inverter_bridge_data', 'pv_charging_watt') }}"
-        availability: "{{ states('sensor.inverter_bridge_data') == 'Online' }}"
-        
-      - name: "Battery Current"
-        unique_id: inv_batt_current
-        unit_of_measurement: "A"
-        state: "{{ state_attr('sensor.inverter_bridge_data', 'batt_current') }}"
-        availability: "{{ states('sensor.inverter_bridge_data') == 'Online' }}"
-        
-      - name: "BMS Battery Percentage"
-        unique_id: inv_batt_soc
-        unit_of_measurement: "%"
-        device_class: battery
-        state_class: measurement
-        state: "{{ state_attr('sensor.inverter_bridge_data', 'batt_soc') }}"
-        availability: "{{ states('sensor.inverter_bridge_data') == 'Online' }}"
-          
-      - name: "Battery Power Flow"
-        unique_id: inv_batt_power
-        unit_of_measurement: "W"
-        device_class: power
-        state: "{{ state_attr('sensor.inverter_bridge_data', 'batt_power_watt') }}"
-        availability: "{{ states('sensor.inverter_bridge_data') == 'Online' }}"
-
-      - name: "Grid Voltage"
-        unique_id: inv_grid_voltage
-        unit_of_measurement: "V"
-        device_class: voltage
-        state: "{{ state_attr('sensor.inverter_bridge_data', 'grid_volt') }}"
-        availability: "{{ states('sensor.inverter_bridge_data') == 'Online' }}"
-
-      - name: "Grid Frequency"
-        unique_id: inv_grid_freq
-        unit_of_measurement: "Hz"
-        device_class: frequency
-        state: "{{ state_attr('sensor.inverter_bridge_data', 'grid_freq') }}"
-        availability: "{{ states('sensor.inverter_bridge_data') == 'Online' }}"
-
-      - name: "Output Voltage"
-        unique_id: inv_out_voltage
-        unit_of_measurement: "V"
-        device_class: voltage
-        state: "{{ state_attr('sensor.inverter_bridge_data', 'ac_out_volt') }}"
-        availability: "{{ states('sensor.inverter_bridge_data') == 'Online' }}"
-
-      - name: "Battery Voltage (Inverter)"
-        unique_id: inv_batt_voltage
-        unit_of_measurement: "V"
-        device_class: voltage
-        state: "{{ state_attr('sensor.inverter_bridge_data', 'batt_volt') }}"
-        availability: "{{ states('sensor.inverter_bridge_data') == 'Online' }}"
-
-      - name: "PV Input Voltage"
-        unique_id: inv_pv_voltage
-        unit_of_measurement: "V"
-        device_class: voltage
-        state: "{{ state_attr('sensor.inverter_bridge_data', 'pv_input_volt') }}"
-        availability: "{{ states('sensor.inverter_bridge_data') == 'Online' }}"
-
-      - name: "PV Input Power"
-        unique_id: inv_pv_power
-        unit_of_measurement: "W"
-        device_class: power
-        state: "{{ state_attr('sensor.inverter_bridge_data', 'pv_input_watt') }}"
-        availability: "{{ states('sensor.inverter_bridge_data') == 'Online' }}"
-
-
+```bash
+echo "JSON" | nc -w 3 BRIDGE_IP 9999
 ```
 
-automations.yaml:
+Should return JSON with all sensor data. Before the dongle connects, you'll see `"device_status_msg": "Offline"`.
 
-```yaml
-- id: '1765747246000'
-  alias: 'Inverter: Set Priority Mode'
-  triggers:
-  - entity_id: input_select.inverter_mode
-    trigger: state
-  conditions:
-  - condition: template
-    value_template: '{{ trigger.to_state.context.user_id != None }}'
-  actions:
-  - choose:
-    - conditions: '{{ trigger.to_state.state == ''Utility First (UTI)'' }}'
-      sequence:
-      - action: shell_command.set_inverter_uti
-    - conditions: '{{ trigger.to_state.state == ''Solar First (SOL)'' }}'
-      sequence:
-      - action: shell_command.set_inverter_sol
-    - conditions: '{{ trigger.to_state.state == ''SBU (Solar-Batt-Util)'' }}'
-      sequence:
-      - action: shell_command.set_inverter_sbu
-    - conditions: '{{ trigger.to_state.state == ''SUB (Solar-Util-Batt)'' }}'
-      sequence:
-      - action: shell_command.set_inverter_sub
-    - conditions: '{{ trigger.to_state.state == ''SUF (GRID Feedback)'' }}'
-      sequence:
-      - action: shell_command.set_inverter_suf
-  mode: restart
-- id: '1765777872842'
-  alias: 'Inverter: Set Charger Priority'
-  triggers:
-  - entity_id: input_select.inverter_charger_priority
-    trigger: state
-  conditions:
-  - condition: template
-    value_template: '{{ trigger.to_state.context.user_id != None }}'
-  actions:
-  - choose:
-    - conditions: '{{ trigger.to_state.state == ''Solar First (CSO)'' }}'
-      sequence:
-      - action: shell_command.set_charger_cso
-    - conditions: '{{ trigger.to_state.state == ''Solar + Utility (SNU)'' }}'
-      sequence:
-      - action: shell_command.set_charger_snu
-    - conditions: '{{ trigger.to_state.state == ''Solar Only (OSO)'' }}'
-      sequence:
-      - action: shell_command.set_charger_oso
-  mode: single
-- id: '1765823166092'
-  alias: 'Inverter: Set AC Range'
-  triggers:
-  - entity_id: input_select.inverter_ac_range
-    trigger: state
-  conditions:
-  - condition: template
-    value_template: '{{ trigger.to_state.context.user_id != None }}'
-  actions:
-  - action: shell_command.set_ac_range
-- id: '1765863406672'
-  alias: 'Inverter: Set Buzzer Mode'
-  triggers:
-  - entity_id: input_select.inverter_buzzer_mode
-    trigger: state
-  conditions:
-  - condition: template
-    value_template: '{{ trigger.to_state.context.user_id != None }}'
-  actions:
-  - choose:
-    - conditions: '{{ trigger.to_state.state == ''Mute (nd1)'' }}'
-      sequence:
-        action: shell_command.set_buzzer_mute
-    - conditions: '{{ trigger.to_state.state == ''Source/Warn/Fault (nd2)'' }}'
-      sequence:
-        action: shell_command.set_buzzer_nd2
-    - conditions: '{{ trigger.to_state.state == ''Warn/Fault (nd3)'' }}'
-      sequence:
-        action: shell_command.set_buzzer_nd3
-    - conditions: '{{ trigger.to_state.state == ''Fault Only (nd4)'' }}'
-      sequence:
-        action: shell_command.set_buzzer_fault
-- id: '1766574962308'
-  alias: 'Inverter: Write Battery Type'
-  description: Sends command to inverter when Battery Type dropdown is changed
-  triggers:
-  - entity_id: input_select.inverter_battery_type
-    trigger: state
-  actions:
-  - choose:
-    - conditions:
-      - condition: state
-        entity_id: input_select.inverter_battery_type
-        state: AGN
-      sequence:
-      - action: shell_command.set_battery_agn
-    - conditions:
-      - condition: state
-        entity_id: input_select.inverter_battery_type
-        state: FLD
-      sequence:
-      - action: shell_command.set_battery_fld
-    - conditions:
-      - condition: state
-        entity_id: input_select.inverter_battery_type
-        state: USR
-      sequence:
-      - action: shell_command.set_battery_usr
-    - conditions:
-      - condition: state
-        entity_id: input_select.inverter_battery_type
-        state: LI2
-      sequence:
-      - action: shell_command.set_battery_li2
-    - conditions:
-      - condition: state
-        entity_id: input_select.inverter_battery_type
-        state: LI4
-      sequence:
-      - action: shell_command.set_battery_li4
-    - conditions:
-      - condition: state
-        entity_id: input_select.inverter_battery_type
-        state: LIb
-      sequence:
-      - action: shell_command.set_battery_lib
-  mode: single
-- id: '1766574281444'
-  alias: 'Inverter: Sync ALL Settings from Device'
-  description: ''
-  triggers:
-  - entity_id: sensor.inverter_bridge_data
-    trigger: state
-  actions:
-  - variables:
-      mode_raw: '{{ state_attr(''sensor.inverter_bridge_data'', ''output_mode'') }}'
-      range_raw: '{{ state_attr(''sensor.inverter_bridge_data'', ''ac_input_range'')
-        }}'
-      prio_raw: '{{ state_attr(''sensor.inverter_bridge_data'', ''charger_priority'')
-        }}'
-      buzzer_raw: '{{ state_attr(''sensor.inverter_bridge_data'', ''buzzer_mode'')
-        }}'
-      amps_raw: '{{ state_attr(''sensor.inverter_bridge_data'', ''max_ac_amps'') }}'
-      soc_grid_raw: '{{ state_attr(''sensor.inverter_bridge_data'', ''soc_back_to_grid'')
-        }}'
-      soc_batt_raw: '{{ state_attr(''sensor.inverter_bridge_data'', ''soc_back_to_batt'')
-        }}'
-      soc_cut_raw: '{{ state_attr(''sensor.inverter_bridge_data'', ''soc_cutoff'')
-        }}'
-      batt_type_raw: '{{ state_attr(''sensor.inverter_bridge_data'', ''battery_type_code'')
-        }}'
-  - choose:
-    - conditions:
-      - condition: template
-        value_template: '{{ mode_raw is not none }}'
-      sequence:
-      - action: input_select.select_option
-        target:
-          entity_id: input_select.inverter_mode
-        data:
-          option: '{% set m = mode_raw | int %} {% if m == 0 %}Utility First (UTI)
-            {% elif m == 1 %}Solar First (SOL) {% elif m == 2 %}SBU (Solar-Batt-Util)
-            {% elif m == 3 %}SUB (Solar-Util-Batt) {% elif m == 4 %}SUF (GRID Feedback)
-            {% else %}{{ states(''input_select.inverter_mode'') }}{% endif %}
+### Step 4: Home Assistant Integration
 
-            '
-  - choose:
-    - conditions:
-      - condition: template
-        value_template: '{{ range_raw is not none }}'
-      sequence:
-      - action: input_select.select_option
-        target:
-          entity_id: input_select.inverter_ac_range
-        data:
-          option: '{% set r = range_raw | int %} {% if r == 0 %}Appliances (APL) {%
-            elif r == 1 %}UPS (UPS) {% elif r == 2 %}Generator (GEN) {% else %}{{
-            states(''input_select.inverter_ac_range'') }}{% endif %}
+**Option A: HACS (Recommended)** — See [Quick Start (HACS)](#quick-start-hacs--recommended) above. No YAML needed.
 
-            '
-  - choose:
-    - conditions:
-      - condition: template
-        value_template: '{{ prio_raw is not none }}'
-      sequence:
-      - action: input_select.select_option
-        target:
-          entity_id: input_select.inverter_charger_priority
-        data:
-          option: '{% set p = prio_raw | int %} {% if p == 1 %}Solar First (CSO) {%
-            elif p == 2 %}Solar + Utility (SNU) {% elif p == 3 %}Solar Only (OSO)
-            {% else %}{{ states(''input_select.inverter_charger_priority'') }}{% endif
-            %}
+**Option B: Manual YAML** — If you prefer YAML-based configuration, copy the files from the `homeassistant/` directory:
 
-            '
-  - choose:
-    - conditions:
-      - condition: template
-        value_template: '{{ batt_type_raw is not none }}'
-      sequence:
-      - action: input_select.select_option
-        target:
-          entity_id: input_select.inverter_battery_type
-        data:
-          option: '{% set b = batt_type_raw | int %} {% if b == 0 %}AGN {% elif b
-            == 1 %}FLD {% elif b == 2 %}USR {% elif b == 4 %}LI2 {% elif b == 6 %}LI4
-            {% elif b == 8 %}LIb {% else %}{{ states(''input_select.inverter_battery_type'')
-            }}{% endif %}
+- **`homeassistant/configuration.yaml`** — Sensors, shell commands, template entities, switches, number controls
+- **`homeassistant/automations.yaml`** — Automation rules that sync HA dropdowns with inverter settings
 
-            '
-  mode: single
-  max_exceeded: silent
-````
-**Isolate HA issues:**
-This command prints all data on any terminal on local network:
+Find-and-replace `BRIDGE_IP` with your actual bridge server IP address, then restart HA.
 
-```terminal
-echo "JSON" | nc -w 1 <bridge ip> 9999
-```
-```json
-{"fault_code": 0, "fault_msg": "No Fault", "warning_code": 99, "warning_msg": "Warning Active", "device_status_code": 3, "device_status_msg": "Battery Mode", "fault_bitmask": 0, "warning_bitmask": 65, "batt_volt": 52.5, "ac_load_va": 1081, "ac_load_real_watt": 1036, "ac_load_pct": 17.4, "batt_power_watt": 1120, "grid_power_watt": 0, "ac_output_amp": 4.7, "pv_input_watt": 0, "pv_input_volt": 32.4, "pv_current": 0.0, "batt_soc": 63, "temp_dc": 32, "temp_inv": 27, "max_total_amps": 120.0, "max_ac_amps": 70.0, "batt_current": 21.3, "grid_volt": 0.0, "grid_freq": 0.0, "ac_out_volt": 230.0, "ac_out_amp": 4.7, "return_to_default": 0, "charger_priority": 3, "output_mode": 3, "ac_input_range": 1, "buzzer_mode": 0, "backlight_status": 1, "soc_back_to_grid": 10, "soc_back_to_batt": 60, "soc_cutoff": 3, "grid_current": 0.0, "inverter_temp": 27, "grid_charge_setting": 0, "total_pv_energy_kwh": 4269.3469, "total_grid_input_kwh": 14.3268, "total_load_kwh": 13.0326, "total_battery_charge_kwh": 5.3052, "total_battery_discharge_kwh": 4.6439, "ac_load_watt": 1036}
+## Testing the Bridge
+
+Query all sensor data:
+```bash
+echo "JSON" | nc -w 1 BRIDGE_IP 9999
 ```
 
-### 📊 Register Map
+Send a command:
+```bash
+# Switch to Solar First mode
+echo "MODE_1" | nc -w 5 BRIDGE_IP 9999
 
-| Register | Function | Unit / Description | Script Variable |
-| :--- | :--- | :--- | :--- |
-| **100-101** | Fault Code | 32-bit Combined Fault Flags (High/Low) | `vf[0], vf[1]` |
-| **108-109** | Warning Code | 32-bit Combined Warning Flags (High/Low) | `vf[8], vf[9]` |
-| **201** | Device Status | 0=Power On, 1=Standby, 2=Line, 3=Batt, etc. | `vals[1]` |
-| **202** | Grid Voltage | 0.1 V | `vals[2]` |
-| **203** | Grid Frequency | 0.01 Hz | `vals[3]` |
-| **204** | Grid Power | Watts (Power drawn from Grid) | `vals[4]` |
-| **205** | Output Voltage | 0.1 V | `vals[5]` |
-| **211** | Output Current | 0.1 A (Load Amps) | `vals[11]` |
-| **213** | Active Output Power | Watts (Real House Load) | `vals[13]` |
-| **214** | Apparent Output | VA (Volt-Amps) | `vals[14]` |
-| **215** | Battery Voltage | 0.1 V | `vals[15]` |
-| **219** | PV Voltage | 0.1 V | `vals[19]` |
-| **223** | PV Input Power | Watts (Total PV) | `vals[23]` |
-| **224** | PV Charging Power | Watts (Solar to Battery) | `vals[24]` |
-| **226** | Inverter Temp | °C | `vals[26]` |
-| **227** | DC/Heatsink Temp | °C | `vals[27]` |
-| **229** | Battery SOC | Percentage % | `vals[29]` |
-| **232** | Net Battery Current | 0.1 A (Signed: +Charging, -Discharging) | `vals[32]` |
-| **301** | Output Mode | 0=UTI, 1=SOL, 2=SBU, 3=SUB, 4=SUF | `v300[0]` |
-| **302** | AC Input Range | 0=Appliances, 1=UPS, 2=Gen | `v300[1]` |
-| **303** | Buzzer Mode | 0=Mute, 1=Src/Warn/Flt, 2=Warn/Flt, 3=Flt | `v300[2]` |
-| **305** | LCD Backlight | 0=Off, 1=On | `v300[4]` |
-| **306** | Return to Default | 0=Disabled, 1=Enabled | `v300[5]` |
-| **322** | Battery Type | 0=AGN, 1=FLD, 2=USR, 4=LI2, 6=LI4, 8=LIb | `v322[0]` |
-| **324** | Bulk Charge Volt | 0.1 V | `v322[2]` |
-| **325** | Float Charge Volt | 0.1 V | `v322[3]` |
-| **329** | Low DC Cutoff Volt | 0.1 V | `v322[7]` |
-| **331** | Charger Priority | 1=Solar(CSO), 2=Solar+Grid(SNU), 3=Only Solar(OSO) | `v330[0]` |
-| **332** | Max Total Amps | 0.1 A (Total Charging Current) | `v330[1]` |
-| **333** | Max AC Amps | 0.1 A (Grid Charging Current) | `v330[2]` |
-| **341** | SOC Back to Grid | Percentage % | `vsoc[0]` |
-| **342** | SOC Back to Batt | Percentage % | `vsoc[1]` |
-| **343** | SOC Cut-off | Percentage % | `vsoc[2]` |
+# Set AC charge amps to 30A
+echo "SET_AMPS_30" | nc -w 5 BRIDGE_IP 9999
 
-### 🧮 Derived Sensors Map
+# Set battery back-to-grid SOC to 15%
+echo "SET_SOC_GRID_15" | nc -w 5 BRIDGE_IP 9999
+```
 
-| Sensor | Formula | Unit / Description | Script Variable |
-| :--- | :--- | :--- | :--- |
-| **Grid Current** | `grid_power_watt / grid_volt` | A (Amperes drawn from grid) | `latest_data_json["grid_current"]` |
-| **Battery Current** | `vals[32] / 10.0` | A (Signed Net Current) | `latest_data_json["batt_current"]` |
-| **Battery Power** | `batt_current * batt_volt` | W (Signed Net Power) | `latest_data_json["batt_power_watt"]` |
-| **PV Current** | `pv_input_watt / pv_input_volt` | A (Solar panel current) | `latest_data_json["pv_current"]` |
-| **AC Load Percentage** | `min((ac_load_va / 6200) * 100, 300)` | % (Load relative to rated 6200W) | `latest_data_json["ac_load_pct"]` |
-| **Total PV Energy** | `∫(p_pv * dt) / 3600000` | kWh (Cumulative solar production) | `energy_data["total_pv_kwh"]` |
-| **Total Grid Input** | `∫(p_grid * dt) / 3600000` (when p_grid > 0) | kWh (Cumulative grid consumption) | `energy_data["total_grid_input_kwh"]` |
-| **Total Load Energy** | `∫(p_load * dt) / 3600000` | kWh (Cumulative household consumption) | `energy_data["total_load_kwh"]` |
-| **Total Battery Charge** | `∫(batt_p * dt) / 3600000` (when batt_p > 0) | kWh (Cumulative energy charged into battery) | `energy_data["total_battery_charge_kwh"]` |
-| **Total Battery Discharge** | `∫(abs(batt_p) * dt) / 3600000` (when batt_p < 0) | kWh (Cumulative energy discharged from battery) | `energy_data["total_battery_discharge_kwh"]` |
+## Command Reference
 
+| Command | Description |
+|---|---|
+| `JSON` | Return all sensor data as JSON |
+| `MODE_0` to `MODE_4` | Set output mode (UTI/SOL/SBU/SUB/SUF) |
+| `CSO_SET` / `SNU_SET` / `OSO_SET` | Set charger priority |
+| `CHARGE_ON` / `CHARGE_OFF` | Enable/disable grid charging |
+| `SET_AMPS_x` | Set max AC charge current (amps) |
+| `SET_TOTAL_AMPS_x` | Set max total charge current (amps) |
+| `SET_SOC_GRID_x` | Set back-to-grid SOC % |
+| `SET_SOC_BATT_x` | Set back-to-battery SOC % |
+| `SET_SOC_CUTOFF_x` | Set cut-off SOC % |
+| `SET_BUZZER_0` to `SET_BUZZER_3` | Set buzzer mode |
+| `SET_BACKLIGHT_0` / `SET_BACKLIGHT_1` | LCD backlight off/on |
+| `SET_BATTERY_TYPE_x` | Set battery type (0=AGN,1=FLD,2=USR,4=LI2,6=LI4,8=LIb) |
+| `SET_BULK_VOLT_x` | Set bulk charge voltage |
+| `SET_FLOAT_VOLT_x` | Set float charge voltage |
+| `SET_LOW_DC_CUTOFF_x` | Set low DC cut-off voltage |
+| `SET_RETURN_DEFAULT_0/1` | Return to default screen off/on |
+| `SET_AC_RANGE_0/1/2` | AC input range (APL/UPS/GEN) |
 
-## ⚠️ Disclaimer & Safety Warning
+## Register Map
+
+| Register | Function | Unit / Description |
+|---|---|---|
+| **100-101** | Fault Code | 32-bit combined fault flags |
+| **108-109** | Warning Code | 32-bit combined warning flags |
+| **201** | Device Status | 0=Power On, 1=Standby, 2=Line, 3=Batt, 4=Bypass, 5=Charging, 6=Fault |
+| **202** | Grid Voltage | 0.1 V |
+| **203** | Grid Frequency | 0.01 Hz |
+| **204** | Grid Power | Watts |
+| **205** | Output Voltage | 0.1 V |
+| **211** | Output Current | 0.1 A |
+| **213** | Active Output Power | Watts (real load) |
+| **214** | Apparent Output | VA |
+| **215** | Battery Voltage | 0.1 V |
+| **219** | PV Voltage | 0.1 V |
+| **223** | PV Input Power | Watts |
+| **224** | PV Charging Power | Watts (solar→battery) |
+| **226** | Inverter Temp | °C |
+| **227** | DC/Heatsink Temp | °C |
+| **229** | Battery SOC | % |
+| **232** | Net Battery Current | 0.1 A (signed: + charging, - discharging) |
+| **301** | Output Mode | 0=UTI, 1=SOL, 2=SBU, 3=SUB, 4=SUF |
+| **302** | AC Input Range | 0=Appliances, 1=UPS, 2=Gen |
+| **303** | Buzzer Mode | 0=Mute, 1=Src/Warn/Flt, 2=Warn/Flt, 3=Flt |
+| **305** | LCD Backlight | 0=Off, 1=On |
+| **306** | Return to Default | 0=Disabled, 1=Enabled |
+| **322** | Battery Type | 0=AGN, 1=FLD, 2=USR, 4=LI2, 6=LI4, 8=LIb |
+| **324** | Bulk Charge Volt | 0.1 V |
+| **325** | Float Charge Volt | 0.1 V |
+| **329** | Low DC Cutoff Volt | 0.1 V |
+| **331** | Charger Priority | 1=CSO, 2=SNU, 3=OSO |
+| **332** | Max Total Amps | 0.1 A |
+| **333** | Max AC Amps | 0.1 A |
+| **341** | SOC Back to Grid | % |
+| **342** | SOC Back to Batt | % |
+| **343** | SOC Cut-off | % |
+
+## Tools
+
+### Register Hunter (`tools/register_hunter.py`)
+
+A discovery tool for mapping unknown registers. It takes a snapshot, waits for you to change a setting on the inverter's LCD, then reports which registers changed. This is how the register map above was built.
+
+```bash
+python3 tools/register_hunter.py
+```
+
+## Disclaimer & Safety Warning
 
 **Use at your own risk.** This project is not affiliated with Anenji, Easun, MPP Solar, or any other manufacturer.
 
-* **⚡ Active Control Risk:** This bridge now supports **writing settings** to the inverter (Registers 300+). Changing physical parameters like **Max Charging Amps** or **Battery Cut-off Limits** can stress your battery or inverter if set incorrectly. Always verify your battery's datasheet before changing these values in Home Assistant.
-* **🔌 Cloud Disconnection:** By design, this bridge **hijacks** the inverter's network traffic. The official mobile app will permanently show **"Offline"**, and you will **not** receive firmware updates from the manufacturer while this script is running.
-* **🛠️ Expert Use Only:** While the read-logic is safe, the write-logic touches the inverter's internal memory. Do not modify the `shell_command` values in `configuration.yaml` unless you understand the Modbus protocol specific to your device.
+- **Active Control Risk:** This bridge supports **writing settings** to the inverter (Registers 300+). Changing parameters like Max Charging Amps or Battery Cut-off Limits can stress your battery or inverter if set incorrectly. Always verify your battery's datasheet first.
+- **Cloud Disconnection:** By design, this bridge **hijacks** the inverter's network traffic. The official mobile app will permanently show "Offline", and you will not receive firmware updates while the bridge is running.
+- **Expert Use Only:** The write-logic touches the inverter's internal memory. Do not modify shell commands unless you understand Modbus protocol for your specific device.
 
+## Credits
 
+Adapted from [samuelolteanu/Local-Cloud-Bridge-for-Anenji-Easun-MPP-Solar-Inverters](https://github.com/samuelolteanu/Local-Cloud-Bridge-for-Anenji-Easun-MPP-Solar-Inverters).
 
+## License
 
-
-
-
-
-
-
-
-
-
-
+GPL-3.0 — See [LICENSE](LICENSE)
