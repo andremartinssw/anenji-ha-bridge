@@ -1,0 +1,4 @@
+FROM python:3.11-slim
+WORKDIR /app
+COPY inverter_bridge.py .
+CMD ["python", "-u", "inverter_bridge.py"]

@@ -1,0 +1,17 @@
+services:
+  anenji-bridge:
+    build:
+      context: /root/anenji-bridge
+      dockerfile: deploy/Dockerfile
+    container_name: anenji-bridge
+    restart: unless-stopped
+    network_mode: host
+    env_file:
+      - .env
+    environment:
+      - MQTT_HOST=${MQTT_HOST:-127.0.0.1}
+      - MQTT_PORT=${MQTT_PORT:-1883}
+      - DONGLE_PORT=${DONGLE_PORT:-1883}
+      - MQTT_TOPIC_PREFIX=${MQTT_TOPIC_PREFIX:-solar/inverter}
+      - DONGLE_DEVICE_ID=${DONGLE_DEVICE_ID}
+      - DONGLE_PRODUCT=${DONGLE_PRODUCT}
