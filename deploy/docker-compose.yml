@@ -1,7 +1,9 @@
 services:
+  # Cloud MQTT bridge — receives telemetry via Mosquitto bridge from EnerWise cloud
+  # Keep as fallback; gets no data when DNAT redirects dongle to VPS
   anenji-bridge:
     build:
-      context: /root/anenji-bridge
+      context: ../..
       dockerfile: deploy/Dockerfile
     container_name: anenji-bridge
     restart: unless-stopped
@@ -15,3 +17,25 @@ services:
       - MQTT_TOPIC_PREFIX=${MQTT_TOPIC_PREFIX:-solar/inverter}
       - DONGLE_DEVICE_ID=${DONGLE_DEVICE_ID}
       - DONGLE_PRODUCT=${DONGLE_PRODUCT}
+
+  # TCP intercept bridge — direct Modbus via dongle on port 18899
+  # Requires DNAT at router: <cloud_ip>:18899 → <vps_ip>:18899
+  anenji-bridge-tcp:
+    build:
+      context: ../..
+      dockerfile: deploy/Dockerfile.tcp
+    container_name: anenji-bridge-tcp
+    restart: unless-stopped
+    network_mode: host
+    env_file:
+      - .env
+    environment:
+      - MQTT_HOST=${MQTT_HOST:-127.0.0.1}
+      - MQTT_PORT=${MQTT_PORT:-1883}
+      - MQTT_TOPIC_PREFIX=${MQTT_TOPIC_PREFIX:-solar/inverter}
+      - INVERTER_PORT=18899
+      - CONTROL_PORT=9999
+      - MQTT_PUBLISH_INTERVAL=5.0
+      - ENERGY_FILE=/data/inverter_energy.json
+    volumes:
+      - ./data:/data

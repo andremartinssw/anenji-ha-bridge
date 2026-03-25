@@ -98,38 +98,48 @@ def dongle_command_payload(reg: int, value: int) -> str:
 # Registers confirmed from EnerWise cloud capture unless noted.
 COMMAND_MAP = {
     "output_priority": {
-        # reg 0x1201 confirmed (2026-03-13 capture: 01 06 12 01 00 01 = SBU)
+        # Internal register 301 — confirmed in inverter_bridge.py
+        # (0x1201 is the EXTERNAL RS485 address; dongle uses internal bus)
         "values": {
-            "UTI":      (0x1201, 0), "ON_GRID":  (0x1201, 0), "GRID":     (0x1201, 0),
-            "SBU":      (0x1201, 1), "OFF_GRID": (0x1201, 1), "BATTERY":  (0x1201, 1),
-            "SOL":      (0x1201, 2), "SOLAR":    (0x1201, 2),
-            "SUB":      (0x1201, 3),
-            "SUF":      (0x1201, 4), "EXPORT":   (0x1201, 4),
+            "UTI":      (301, 0), "ON_GRID":  (301, 0), "GRID":     (301, 0),
+            "SBU":      (301, 1), "OFF_GRID": (301, 1), "BATTERY":  (301, 1),
+            "SOL":      (301, 2), "SOLAR":    (301, 2),
+            "SUB":      (301, 3),
+            "SUF":      (301, 4), "EXPORT":   (301, 4),
         }
     },
     "work_mode": {
         "values": {
-            "ON_GRID":  (0x1201, 0), "UTI":      (0x1201, 0),
-            "SBU":      (0x1201, 1), "OFF_GRID": (0x1201, 1),
-            "BATTERY":  (0x1201, 1), "HYBRID":   (0x1201, 1),
-            "SOLAR":    (0x1201, 2), "SOL":      (0x1201, 2),
-            "SUB":      (0x1201, 3),
-            "SUF":      (0x1201, 4),
+            "ON_GRID":  (301, 0), "UTI":      (301, 0),
+            "SBU":      (301, 1), "OFF_GRID": (301, 1),
+            "BATTERY":  (301, 1), "HYBRID":   (301, 1),
+            "SOLAR":    (301, 2), "SOL":      (301, 2),
+            "SUB":      (301, 3),
+            "SUF":      (301, 4),
         }
     },
     "energy_saving": {
-        # reg 0x1209 from context
+        # reg 0x1209 from context — TODO: find internal register
         "values": {
             "OFF": (0x1209, 0), "0": (0x1209, 0),
             "ON":  (0x1209, 1), "1": (0x1209, 1),
         }
     },
     "charge_source": {
-        # reg 0x120F from context — values tentative (inverter_bridge.py analogy)
+        # Internal register 331 — confirmed in inverter_bridge.py
+        # (0x120F is the EXTERNAL RS485 address; dongle uses internal bus)
         "values": {
-            "SOLAR":       (0x120F, 1), "PV_FIRST":    (0x120F, 1), "CSO": (0x120F, 1),
-            "SOLAR_GRID":  (0x120F, 2), "GRID":        (0x120F, 2), "SNU": (0x120F, 2),
-            "SOLAR_ONLY":  (0x120F, 3), "OSO":         (0x120F, 3),
+            "SOLAR":       (331, 1), "PV_FIRST":    (331, 1), "CSO": (331, 1),
+            "SOLAR_GRID":  (331, 2), "GRID":        (331, 2), "SNU": (331, 2),
+            "SOLAR_ONLY":  (331, 3), "OSO":         (331, 3),
+        }
+    },
+    "charger_priority": {
+        # Same as charge_source but with separate topic for explicit control
+        "values": {
+            "CSO": (331, 1), "SOLAR_FIRST": (331, 1),
+            "SNU": (331, 2), "SOLAR_GRID":  (331, 2), "CHARGE_ON": (331, 2),
+            "OSO": (331, 3), "SOLAR_ONLY":  (331, 3), "CHARGE_OFF": (331, 3),
         }
     },
     # Numeric registers — values tentative (inverter_bridge.py register map)
@@ -321,6 +331,9 @@ def on_dongle_connect(client, userdata, flags, reason_code, properties=None):
 def on_dongle_message(client, userdata, msg):
     try:
         payload = json.loads(msg.payload.decode())
+        # Skip command echoes and non-telemetry messages
+        if "msg" not in payload:
+            return
         data_msg = payload.get("msg", {})
         translated = translate_dongle_msg(data_msg)
         soc    = translated.get("batt_soc", "?")
