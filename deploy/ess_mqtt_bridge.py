@@ -87,9 +87,14 @@ def build_fc06_hex(reg: int, value: int) -> str:
 
 
 def dongle_command_payload(reg: int, value: int) -> str:
-    """Build the EnerWise command JSON for a single register write."""
+    """Build the EnerWise command JSON for a single register write.
+
+    Format confirmed from cloud capture (2026-03-26):
+    - timestamp must be a STRING (not int)
+    - register addresses must be EXTERNAL (0x12xx range)
+    """
     hex_frame = build_fc06_hex(reg, value)
-    ts = int(time.time() * 1000)
+    ts = str(int(time.time() * 1000))
     return json.dumps({"content": hex_frame, "timestamp": ts})
 
 
@@ -98,59 +103,62 @@ def dongle_command_payload(reg: int, value: int) -> str:
 # Registers confirmed from EnerWise cloud capture unless noted.
 COMMAND_MAP = {
     "output_priority": {
-        # Internal register 301 — confirmed in inverter_bridge.py
-        # (0x1201 is the EXTERNAL RS485 address; dongle uses internal bus)
+        # EXTERNAL register 0x1201 — confirmed from ESP32 RS485 reads
         "values": {
-            "UTI":      (301, 0), "ON_GRID":  (301, 0), "GRID":     (301, 0),
-            "SBU":      (301, 1), "OFF_GRID": (301, 1), "BATTERY":  (301, 1),
-            "SOL":      (301, 2), "SOLAR":    (301, 2),
-            "SUB":      (301, 3),
-            "SUF":      (301, 4), "EXPORT":   (301, 4),
+            "UTI":      (0x1201, 0), "ON_GRID":  (0x1201, 0), "GRID":     (0x1201, 0),
+            "SBU":      (0x1201, 1), "OFF_GRID": (0x1201, 1), "BATTERY":  (0x1201, 1),
+            "SOL":      (0x1201, 2), "SOLAR":    (0x1201, 2),
+            "SUB":      (0x1201, 3),
+            "SUF":      (0x1201, 4), "EXPORT":   (0x1201, 4),
         }
     },
     "work_mode": {
+        # Alias for output_priority
         "values": {
-            "ON_GRID":  (301, 0), "UTI":      (301, 0),
-            "SBU":      (301, 1), "OFF_GRID": (301, 1),
-            "BATTERY":  (301, 1), "HYBRID":   (301, 1),
-            "SOLAR":    (301, 2), "SOL":      (301, 2),
-            "SUB":      (301, 3),
-            "SUF":      (301, 4),
+            "ON_GRID":  (0x1201, 0), "UTI":      (0x1201, 0),
+            "SBU":      (0x1201, 1), "OFF_GRID": (0x1201, 1),
+            "BATTERY":  (0x1201, 1), "HYBRID":   (0x1201, 1),
+            "SOLAR":    (0x1201, 2), "SOL":      (0x1201, 2),
+            "SUB":      (0x1201, 3),
+            "SUF":      (0x1201, 4),
         }
     },
     "energy_saving": {
-        # reg 0x1209 from context — TODO: find internal register
+        # EXTERNAL register 0x1209
         "values": {
             "OFF": (0x1209, 0), "0": (0x1209, 0),
             "ON":  (0x1209, 1), "1": (0x1209, 1),
         }
     },
     "charge_source": {
-        # Internal register 331 — confirmed in inverter_bridge.py
-        # (0x120F is the EXTERNAL RS485 address; dongle uses internal bus)
+        # EXTERNAL register 0x1204 — CONFIRMED from EnerWise cloud capture 2026-03-26
+        # Cloud sends: 01 06 12 04 00 XX CRC — dongle forwards to inverter
+        # Values confirmed: 0=Hybrid/SNU, 3=PV Only/CSO
         "values": {
-            "SOLAR":       (331, 1), "PV_FIRST":    (331, 1), "CSO": (331, 1),
-            "SOLAR_GRID":  (331, 2), "GRID":        (331, 2), "SNU": (331, 2),
-            "SOLAR_ONLY":  (331, 3), "OSO":         (331, 3),
+            "SNU":         (0x1204, 0), "SOLAR_GRID":  (0x1204, 0), "HYBRID": (0x1204, 0),
+            "SOF":         (0x1204, 1), "SOLAR_FIRST": (0x1204, 1),
+            "SNU2":        (0x1204, 2),
+            "SOLAR":       (0x1204, 3), "CSO":         (0x1204, 3), "PV_ONLY": (0x1204, 3),
         }
     },
     "charger_priority": {
-        # Same as charge_source but with separate topic for explicit control
+        # Same register as charge_source (0x1204) — separate topic for explicit control
         "values": {
-            "CSO": (331, 1), "SOLAR_FIRST": (331, 1),
-            "SNU": (331, 2), "SOLAR_GRID":  (331, 2), "CHARGE_ON": (331, 2),
-            "OSO": (331, 3), "SOLAR_ONLY":  (331, 3), "CHARGE_OFF": (331, 3),
+            "SNU": (0x1204, 0), "SOLAR_GRID":  (0x1204, 0), "CHARGE_ON": (0x1204, 0),
+            "CSO": (0x1204, 3), "SOLAR_ONLY":  (0x1204, 3), "CHARGE_OFF": (0x1204, 3),
         }
     },
-    # Numeric registers — values tentative (inverter_bridge.py register map)
-    "ac_charge_current":   {"template": (0x014D, "int×10")},
-    "max_charge_current":  {"template": (0x014C, "int×10")},
-    "soc_back_to_grid":    {"template": (0x0155, "int")},
-    "soc_back_to_battery": {"template": (0x0156, "int")},
-    "soc_cutoff":          {"template": (0x0157, "int")},
-    "bulk_charge_volt":    {"template": (0x0144, "float×10")},
-    "float_charge_volt":   {"template": (0x0145, "float×10")},
-    "low_dc_cutoff":       {"template": (0x0149, "float×10")},
+    # Numeric registers — EXTERNAL addresses (0x12xx range)
+    # Internal→External offset: +4008 (decimal) or internal + 0x0FA8
+    # TODO: confirm these mappings via cloud capture
+    "ac_charge_current":   {"template": (0x1207, "int×10")},  # was 0x014D
+    "max_charge_current":  {"template": (0x1206, "int×10")},  # was 0x014C
+    "soc_back_to_grid":    {"template": (0x120F, "int")},     # was 0x0155
+    "soc_back_to_battery": {"template": (0x1210, "int")},     # was 0x0156
+    "soc_cutoff":          {"template": (0x1211, "int")},     # was 0x0157
+    "bulk_charge_volt":    {"template": (0x1202, "float×10")},  # was 0x0144
+    "float_charge_volt":   {"template": (0x1203, "float×10")},  # was 0x0145
+    "low_dc_cutoff":       {"template": (0x1205, "float×10")},  # was 0x0149
 }
 
 # --- SHARED STATE ---
@@ -335,6 +343,8 @@ def on_dongle_message(client, userdata, msg):
         if "msg" not in payload:
             return
         data_msg = payload.get("msg", {})
+        if not isinstance(data_msg, dict):
+            return  # skip non-telemetry (retained strings, command echoes)
         translated = translate_dongle_msg(data_msg)
         soc    = translated.get("batt_soc", "?")
         pv     = translated.get("pv_input_watt", "?")
