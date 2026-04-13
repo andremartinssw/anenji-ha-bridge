@@ -9,6 +9,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.components.switch import SwitchEntity
 
 from .const import (
     DOMAIN,
@@ -35,7 +36,7 @@ async def async_setup_entry(
     )
 
 
-class AnenjiBridgeSwitch(CoordinatorEntity[AnenjiBridgeCoordinator]):
+class AnenjiBridgeSwitch(CoordinatorEntity[AnenjiBridgeCoordinator], SwitchEntity):
     """Representation of an Anenji Bridge switch."""
 
     _attr_has_entity_name = True
