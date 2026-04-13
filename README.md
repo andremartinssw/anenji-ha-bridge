@@ -30,6 +30,7 @@ By hijacking the inverter's WiFi dongle traffic and redirecting it to a local Py
 |---|---|
 | ANENJI ANJ-6200W-48V | Verified |
 | ANENJI ANJ-12KP-48V | Verified |
+| Vevor EM6200-48L | Verified |
 | Other SRNE-based (Easun, MPP Solar) | Should work — registers may vary |
 
 ## How It Works
@@ -331,7 +332,7 @@ python3 tools/register_hunter.py
 
 ## Disclaimer & Safety Warning
 
-**Use at your own risk.** This project is not affiliated with Anenji, Easun, MPP Solar, or any other manufacturer.
+**Use at your own risk.** This project is not affiliated with Anenji, Easun, MPP Solar, Vevor, or any other manufacturer.
 
 - **Active Control Risk:** This bridge supports **writing settings** to the inverter (Registers 300+). Changing parameters like Max Charging Amps or Battery Cut-off Limits can stress your battery or inverter if set incorrectly. Always verify your battery's datasheet first.
 - **Cloud Disconnection:** By design, this bridge **hijacks** the inverter's network traffic. The official mobile app will permanently show "Offline", and you will not receive firmware updates while the bridge is running.
