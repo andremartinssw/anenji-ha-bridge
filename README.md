@@ -85,8 +85,13 @@ All entities appear under a single "Anenji Inverter" device.
 ## Quick Start (Docker)
 
 ```bash
-git clone https://github.com/YOUR_USER/anenji-ha-bridge.git
-cd anenji-ha-bridge
+git clone https://github.com/Millerderek/anenji-ha-bridge.git
+cd anenji-ha-bridge/deploy
+cp .env.example .env
+
+# Update environment variables for your particular setup
+nano .env
+
 docker compose up -d
 ```
 
