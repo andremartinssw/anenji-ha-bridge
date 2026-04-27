@@ -27,6 +27,7 @@ DOMAIN: Final = "anenji_bridge"
 CONF_HOST: Final = "host"
 CONF_PORT: Final = "port"
 DEFAULT_PORT: Final = 9999
+CONF_SCAN_INTERVAL: Final = "scan_interval"
 DEFAULT_SCAN_INTERVAL: Final = 1
 
 MANUFACTURER: Final = "Anenji / SRNE"

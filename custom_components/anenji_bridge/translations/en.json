@@ -6,7 +6,8 @@
         "description": "Enter the IP address and port of your Anenji Bridge server.",
         "data": {
           "host": "Bridge IP Address",
-          "port": "Bridge Port"
+          "port": "Bridge Port",
+          "scan_interval": "Scan Interval"
         }
       }
     },
