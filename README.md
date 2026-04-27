@@ -8,6 +8,8 @@ The current registers are mapped for **SRNE-based single-phase inverters**. Volt
 
 By hijacking the inverter's WiFi dongle traffic and redirecting it to a local Python bridge, you get **1-second real-time updates**, complete offline control, and instant Home Assistant integration — without opening the case, voiding the warranty, or using RS232 adapters.
 
+<img width="525" height="1148" alt="Preview" src="https://github.com/user-attachments/assets/7d57db3e-1cf2-49a7-9fe3-26bdba9b691a" />
+
 ## Features
 
 - **HACS Compatible** — One-click install via the Home Assistant Community Store
@@ -85,8 +87,13 @@ All entities appear under a single "Anenji Inverter" device.
 ## Quick Start (Docker)
 
 ```bash
-git clone https://github.com/YOUR_USER/anenji-ha-bridge.git
-cd anenji-ha-bridge
+git clone https://github.com/Millerderek/anenji-ha-bridge.git
+cd anenji-ha-bridge/deploy
+cp .env.example .env
+
+# Update environment variables for your particular setup
+nano .env
+
 docker compose up -d
 ```
 
