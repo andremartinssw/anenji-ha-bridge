@@ -62,7 +62,7 @@ The inverter's WiFi dongle tries to connect to a cloud server at `8.218.202.213:
 
 1. Open HACS in Home Assistant
 2. Click the three dots (top right) → **Custom repositories**
-3. Add `https://github.com/Millerderek/anenji-ha-bridge` as **Integration**
+3. Add `https://github.com/andremartinssw/anenji-ha-bridge` as **Integration**
 4. Search for "Anenji" in HACS and click **Install**
 5. Restart Home Assistant
 6. Go to **Settings → Devices & Services → Add Integration → Anenji Inverter Bridge**
@@ -87,7 +87,7 @@ All entities appear under a single "Anenji Inverter" device.
 ## Quick Start (Docker)
 
 ```bash
-git clone https://github.com/Millerderek/anenji-ha-bridge.git
+git clone https://github.com/andremartinssw/anenji-ha-bridge.git
 cd anenji-ha-bridge/deploy
 cp .env.example .env
 
